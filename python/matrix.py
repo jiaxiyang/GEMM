@@ -4,8 +4,6 @@ import time
 import argparse
 from prettytable import PrettyTable
 
-N = 1024
-
 def profiling(num):
     N = num
     # memory: N * N 
