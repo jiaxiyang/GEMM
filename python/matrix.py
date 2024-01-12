@@ -2,17 +2,12 @@
 import numpy as np
 import time
 import argparse
+from prettytable import PrettyTable
 
 N = 1024
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Process matmul.')
-    # parser.add_argument("n", type=int)
-    parser.add_argument('-n', '--num', type=int) 
-    args = parser.parse_args()
-    N = args.num
-    print(f"N: {N}")
-
+def profiling(num):
+    N = num
     # memory: N * N 
     A = np.random.randn(N, N).astype(np.float32)
 
@@ -20,33 +15,43 @@ if __name__ == '__main__':
     B = np.random.randn(N, N).astype(np.float32)
     
     # memory: N * N; comput: N * N * 2 N
-    flops = N * N * 2 * N
-    print(f"{flops / 1e9:.2f} GFlops")
+    flops = N * N * 2 * N / 1e9
+    # print(f"{flops / 1e9:.2f} GFlops")
 
     tic = time.monotonic()
     C = A @ B
     toc = time.monotonic()
-    print(f"{flops / (toc - tic) / 1e9} GFLOPS")
-    
-# (prediction) [xiyang.jia@tcloud-3090-005 python]$ python matrix.py -n 1024
-# N: 1024
-# 2.15 GFlops
-# 836.0912458796764 GFLOPS
-# (prediction) [xiyang.jia@tcloud-3090-005 python]$ python matrix.py -n 512
-# N: 512
-# 0.27 GFlops
-# 368.5406903517908 GFLOPS
-# (prediction) [xiyang.jia@tcloud-3090-005 python]$ python matrix.py -n 1024
-# N: 1024
-# 2.15 GFlops
-# 705.4175640324194 GFLOPS
-# (prediction) [xiyang.jia@tcloud-3090-005 python]$ python matrix.py -n 2048
-# N: 2048
-# 17.18 GFlops
-# 116.15083572419698 GFLOPS
-# (prediction) [xiyang.jia@tcloud-3090-005 python]$ python matrix.py -n 4096
-# N: 4096
-# 137.44 GFlops
-# 712.1434856945628 GFLOPS
+    s = toc - tic
+    flops_rate = flops / s
+    return flops, s, flops_rate
+    # print(f"{flops / (toc - tic) / 1e9} GFLOPS")
 
-# 2048 比 1024 和 4096 效率都低
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Process matmul.')
+    # parser.add_argument("n", type=int)
+    parser.add_argument('-n', '--num', type=int) 
+    args = parser.parse_args()
+    # N = args.num
+
+    table = PrettyTable(['num', 'GFlops', 'time(ms)', 'GFLOPS'])
+    for N in [2**n for n in range(7, 15)]:
+        flops, s, flops_rate = profiling(N)
+        table.add_row([N, f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}"])
+
+    print(table)
+
+'''
++-------+---------+----------+---------+
+|  num  |  GFlops | time(ms) |  GFLOPS |
++-------+---------+----------+---------+
+|  128  |   0.00  |   0.95   |   4.43  |
+|  256  |   0.03  |   0.80   |  41.82  |
+|  512  |   0.27  |   0.61   |  436.77 |
+|  1024 |   2.15  |   1.99   | 1077.64 |
+|  2048 |  17.18  |  123.69  |  138.90 |
+|  4096 |  137.44 |  183.71  |  748.13 |
+|  8192 | 1099.51 |  457.52  | 2403.21 |
+| 16384 | 8796.09 | 3107.55  | 2830.56 |
++-------+---------+----------+---------+
+从表中可以看出 2048 执行效率比较差
+'''
