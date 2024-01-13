@@ -3,7 +3,12 @@ import numpy as np
 import time
 import argparse
 from prettytable import PrettyTable
-from tqdm import tqdm
+from rich.progress import track
+from rich.console import Console
+from rich.table import Table
+from rich import print
+from rich import box
+
 
 def profiling(num):
     N = num
@@ -35,25 +40,33 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # N = args.num
 
-    table = PrettyTable(['num', 'GFlops', 'time(ms)', 'GFLOPS'])
-    for N in tqdm([2**n for n in range(7, 15)]):
-        flops, s, flops_rate = profiling(N)
-        table.add_row([N, f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}"])
+    console = Console()
+    table = Table(show_header=True, header_style="bold blue", box=box.ASCII2)
+    for col in ['num', 'GFlops', 'time(ms)', 'GFLOPS']:
+        table.add_column(col, justify='right')
+    
+    tasks = [2 ** n for n in range(7, 15)]
+    with console.status("[bold green]Working on diff matmul...") as status: 
+        while tasks:
+            N = tasks.pop(0)
+            flops, s, flops_rate = profiling(N)
+            table.add_row(f"{N}", f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}")
+            console.log(f"{N} matmul complete")
 
     print(table)
 
 '''
 +-------+---------+----------+---------+
-|  num  |  GFlops | time(ms) |  GFLOPS |
+|   num |  GFlops | time(ms) |  GFLOPS |
 +-------+---------+----------+---------+
-|  128  |   0.00  |   0.95   |   4.43  |
-|  256  |   0.03  |   0.80   |  41.82  |
-|  512  |   0.27  |   0.61   |  436.77 |
-|  1024 |   2.15  |   1.99   | 1077.64 |
-|  2048 |  17.18  |  123.69  |  138.90 |
-|  4096 |  137.44 |  183.71  |  748.13 |
-|  8192 | 1099.51 |  457.52  | 2403.21 |
-| 16384 | 8796.09 | 3107.55  | 2830.56 |
+|   128 |    0.00 |     1.66 |    2.53 |
+|   256 |    0.03 |     2.72 |   12.32 |
+|   512 |    0.27 |    17.04 |   15.75 |
+|  1024 |    2.15 |    70.78 |   30.34 |
+|  2048 |   17.18 |   152.17 |  112.90 |
+|  4096 |  137.44 |   225.83 |  608.59 |
+|  8192 | 1099.51 |   547.01 | 2010.04 |
+| 16384 | 8796.09 |  3373.71 | 2607.24 |
 +-------+---------+----------+---------+
 从表中可以看出 2048 执行效率比较差
 '''
