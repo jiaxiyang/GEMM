@@ -16,6 +16,9 @@ def profiling(num):
     flops = N * N * 2 * N / 1e9
     # print(f"{flops / 1e9:.2f} GFlops")
 
+    # warmup
+    C = A @ B
+    
     tic = time.monotonic()
     C = A @ B
     toc = time.monotonic()
