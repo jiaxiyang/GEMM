@@ -3,6 +3,7 @@ import numpy as np
 import time
 import argparse
 from prettytable import PrettyTable
+from tqdm import tqdm
 
 def profiling(num):
     N = num
@@ -18,7 +19,7 @@ def profiling(num):
 
     # warmup
     C = A @ B
-    
+
     tic = time.monotonic()
     C = A @ B
     toc = time.monotonic()
@@ -35,7 +36,7 @@ if __name__ == '__main__':
     # N = args.num
 
     table = PrettyTable(['num', 'GFlops', 'time(ms)', 'GFLOPS'])
-    for N in [2**n for n in range(7, 15)]:
+    for N in tqdm([2**n for n in range(7, 15)]):
         flops, s, flops_rate = profiling(N)
         table.add_row([N, f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}"])
 
