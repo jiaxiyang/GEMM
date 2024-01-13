@@ -25,9 +25,9 @@ def profiling(num):
     # warmup
     C = A @ B
 
-    tic = time.monotonic()
+    tic = time.perf_counter()
     C = A @ B
-    toc = time.monotonic()
+    toc = time.perf_counter()
     s = toc - tic
     flops_rate = flops / s
     return flops, s, flops_rate

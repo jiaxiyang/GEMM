@@ -10,7 +10,7 @@ from rich.table import Table
 from rich import print
 from rich import box
 
-def profiling(num, use_cuda=False):
+def profiling(num: int, use_cuda=False):
     N = num
     # memory: N * N 
     A = np.random.randn(N, N).astype(np.float32)
@@ -30,9 +30,9 @@ def profiling(num, use_cuda=False):
     # warmup
     C = A_tensor @ B_tensor
 
-    tic = time.monotonic()
+    tic = time.perf_counter()
     C = A_tensor @ B_tensor
-    toc = time.monotonic()
+    toc = time.perf_counter()
     s = toc - tic
     flops_rate = flops / s
     return flops, s, flops_rate
@@ -56,7 +56,7 @@ if __name__ == '__main__':
             flops, s, flops_rate = profiling(N)
             flops_cuda, s_cuda, flops_rate_cuda = profiling(N, True)
             table.add_row(f"{N}", f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}", f"{flops_cuda:.2f}", f"{s_cuda*1000:.2f}",f"{flops_rate_cuda:.2f}")
-            console.log(f"{N} matmul complete")
+            console.log(f"{N} matmul complete; {s*1000:.2f} ms")
 
     print(table)
 
