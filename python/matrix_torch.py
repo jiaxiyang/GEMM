@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import print
 from rich import box
+import csv
 
 def profiling(num: int, use_cuda=False):
     N = num
@@ -45,18 +46,24 @@ if __name__ == '__main__':
 
     console = Console()
     table = Table(show_header=True, header_style="bold blue", box=box.ASCII2)
-    for col in ['num', 'GFlops', 'time(ms)', 'GFLOPS', 'GFlops_cuda', 'time_cuda(ms)', 'GFLOPS_cuda']:
+    header = ['num', 'GFlops', 'time(ms)', 'GFLOPS_cpu', 'GFlops_cuda', 'time_cuda(ms)', 'GFLOPS_cuda']
+    for col in header:
         table.add_column(col, justify='right')
-    
-    # for N in track([2**n for n in range(7, 15)]):
-    tasks = [2 ** n for n in range(7, 15)]
-    with console.status("[bold green]Working on tasks...") as status:
-        while tasks:
-            N = tasks.pop(0)
-            flops, s, flops_rate = profiling(N)
-            flops_cuda, s_cuda, flops_rate_cuda = profiling(N, True)
-            table.add_row(f"{N}", f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}", f"{flops_cuda:.2f}", f"{s_cuda*1000:.2f}",f"{flops_rate_cuda:.2f}")
-            console.log(f"{N} matmul complete; {s*1000:.2f} ms")
+   
+    tasks = [128 * n for n in range(1, 33)]
+    with open('matrix_torch.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(header)
+
+        with console.status("[bold green]Working on tasks...") as status:
+            while tasks:
+                N = tasks.pop(0)
+                flops, s, flops_rate = profiling(N)
+                flops_cuda, s_cuda, flops_rate_cuda = profiling(N, True)
+                row = [f"{N}", f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}", f"{flops_cuda:.2f}", f"{s_cuda*1000:.2f}", f"{flops_rate_cuda:.2f}"]
+                table.add_row(*row)
+                console.log(f"{N} matmul complete; {s*1000:.2f} ms")
+                writer.writerow(row)  # 将结果写入 CSV 文件
 
     print(table)
 

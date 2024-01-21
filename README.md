@@ -1,4 +1,12 @@
 
+## TODO
+
+1. 结果画图
+    - gflops图
+    - 时间图
+2. python 版本； 调用c接口 <https://github.com/flame/how-to-optimize-gemm.git>
+3. export OMP_NUM_THREADS=1;export GOTO_NUM_THREADS=1
+
 ## python matmul
 
 ### numpy

@@ -8,7 +8,8 @@ from rich.console import Console
 from rich.table import Table
 from rich import print
 from rich import box
-
+import csv
+import os
 
 def profiling(num):
     N = num
@@ -32,26 +33,37 @@ def profiling(num):
     flops_rate = flops / s
     return flops, s, flops_rate
     # print(f"{flops / (toc - tic) / 1e9} GFLOPS")
-
 if __name__ == '__main__':
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['GOTO_NUM_THREADS'] = '1'
+
     parser = argparse.ArgumentParser(description='Process matmul.')
-    # parser.add_argument("n", type=int)
     parser.add_argument('-n', '--num', type=int) 
     args = parser.parse_args()
-    # N = args.num
 
     console = Console()
     table = Table(show_header=True, header_style="bold blue", box=box.ASCII2)
-    for col in ['num', 'GFlops', 'time(ms)', 'GFLOPS']:
+    header = ['num', 'GFlops', 'time(ms)', 'GFLOPS']
+    for col in header:
         table.add_column(col, justify='right')
-    
-    tasks = [2 ** n for n in range(7, 15)]
-    with console.status("[bold green]Working on diff matmul...") as status: 
-        while tasks:
-            N = tasks.pop(0)
-            flops, s, flops_rate = profiling(N)
-            table.add_row(f"{N}", f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}")
-            console.log(f"{N} matmul complete")
+
+    # tasks = [2 ** n for n in range(7, 15)]
+    # tasks = [64 * n for n in range(1, 64)]
+    tasks = [128 * n for n in range(1, 33)]
+
+    # 创建 CSV 文件并写入表头
+    with open('matrix.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(header)
+
+        with console.status("[bold green]Working on diff matmul...") as status:
+            while tasks:
+                N = tasks.pop(0)
+                flops, s, flops_rate = profiling(N)
+                row = [f"{N}", f"{flops:.2f}", f"{s*1000:.2f}", f"{flops_rate:.2f}"]
+                table.add_row(*row)
+                console.log(f"{N} matmul complete")
+                writer.writerow(row)  # 将结果写入 CSV 文件
 
     print(table)
 
