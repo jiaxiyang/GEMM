@@ -487,12 +487,23 @@ float testCublasPerformance(const int M, const int N, const int K, const int rep
     return sec;
 }
 
+typedef struct {
+    int M;
+    double cublas;
+    double naiveSgemm;
+    double mySgemmV1Aligned;
+    double mySgemmV2Aligned;
+    double mySgemmV3Aligned;
+    // ... other kernels
+} PerformanceData;
 int main() {
-
+    FILE *fp = fopen("cuda_sgemm.csv", "w");
+    fprintf(fp, "M,naiveSgemm,mySgemmV1Aligned,mySgemmV2Aligned,mySgemmV3Aligned,cublas\n");
     const int M_list[15] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
     const int N_list[15] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
     // const int K_list[15] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
     const int K_list[15] = {1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024};
+    PerformanceData data[15];
     const int outer_repeat = 10, inner_repeat = 1;
 
     {
@@ -523,7 +534,8 @@ int main() {
 
                 double avg_sec = total_sec / outer_repeat;
                 double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-
+                data[i].M = M;
+                data[i].cublas = avg_Gflops;
                 printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
             }
         }
@@ -567,6 +579,7 @@ int main() {
                 double avg_sec = total_sec / outer_repeat;
                 double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
 
+                data[i].naiveSgemm = avg_Gflops;
                 printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
             }
         }
@@ -610,6 +623,7 @@ int main() {
                 double avg_sec = total_sec / outer_repeat;
                 double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
 
+                data[i].mySgemmV1Aligned = avg_Gflops;
                 printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
             }
         }
@@ -654,6 +668,7 @@ int main() {
                 double avg_sec = total_sec / outer_repeat;
                 double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
 
+                data[i].mySgemmV2Aligned = avg_Gflops;
                 printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
             }
         }
@@ -697,10 +712,23 @@ int main() {
                 double avg_sec = total_sec / outer_repeat;
                 double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
 
+                data[i].mySgemmV3Aligned = avg_Gflops;
                 printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
             }
         }
     }
 
+    for (int i = 0; i < 15; i++) {
+        fprintf(fp, "%d,%lf,%lf,%lf,%lf,%lf\n", 
+                data[i].M, 
+                data[i].naiveSgemm, 
+                data[i].mySgemmV1Aligned,
+                data[i].mySgemmV2Aligned,
+                data[i].mySgemmV3Aligned,
+                data[i].cublas
+                // Add other kernels as necessary
+        );
+    }
+    fclose(fp);
     return 0;
 }
