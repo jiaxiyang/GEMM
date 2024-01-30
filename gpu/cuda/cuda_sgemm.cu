@@ -237,6 +237,7 @@ __global__ void mySgemmV3Aligned(
         s_a[0][load_a_smem_k + 2][load_a_smem_m] = r_load_a[2];
         s_a[0][load_a_smem_k + 3][load_a_smem_m] = r_load_a[3];
         FLOAT4(s_b[0][load_b_smem_k][load_b_smem_n]) = FLOAT4(r_load_b[0]);
+        __syncthreads();
     }
 
     for (int bk = 1; bk < (K + BK - 1) / BK; bk++) {
