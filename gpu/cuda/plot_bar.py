@@ -44,17 +44,15 @@ plt.xlabel('Matrix Size (M=N=K)')
 plt.ylabel('GFLOPS')
 plt.title('SGEMM Performance')
 
-# Adding the legend outside of the plot
-plt.legend(bbox_to_anchor=(1.04,1), loc="upper left")
+# 添加图例并将其放置在图表外部
+plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
 
-# Set the position of the x ticks
-plt.xticks(index + bar_width, df['M'])
+# 设置x轴刻度的位置
+plt.xticks(index + (n_cols - 1) * bar_width / 2, df['M'])
 
 # Display the plot with a tight layout
 plt.tight_layout()
 
 # Save the plot
-
-plt.savefig('result.png')
 plt.savefig(sys.argv[2])
 # plt.show()
