@@ -25,7 +25,7 @@ void cpuSgemm(
     }
 }
 
-__global__ void naiveSgemm(
+__global__ void naiveSgemm1(
     float *__restrict__ a, float *__restrict__ b, float *__restrict__ c,
     const int M, const int N, const int K)
 {
@@ -33,6 +33,23 @@ __global__ void naiveSgemm(
     int n = blockIdx.x * blockDim.x + threadIdx.x;
     int m = blockIdx.y * blockDim.y + threadIdx.y;
     if (m < M && n < N)
+    {
+        float psum = 0.0;
+#pragma unroll
+        for (int k = 0; k < K; k++)
+        {
+            psum += a[OFFSET(m, k, K)] * b[OFFSET(k, n, N)];
+        }
+        c[OFFSET(m, n, N)] = psum;
+    }
+}
+
+__global__ void naiveSgemm(
+    float *__restrict__ a, float *__restrict__ b, float *__restrict__ c, const int M, const int N, const int K)
+{
+    int n = blockIdx.x * blockDim.x + threadIdx.x;
+    int m = blockIdx.y * blockDim.y + threadIdx.y;
+    if (n < N && m < M)
     {
         float psum = 0.0;
 #pragma unroll
@@ -259,6 +276,7 @@ __global__ void mySgemmV3Aligned(
         s_a[0][load_a_smem_k + 2][load_a_smem_m] = r_load_a[2];
         s_a[0][load_a_smem_k + 3][load_a_smem_m] = r_load_a[3];
         FLOAT4(s_b[0][load_b_smem_k][load_b_smem_n]) = FLOAT4(r_load_b[0]);
+        __syncthreads();
     }
 
     for (int bk = 1; bk < (K + BK - 1) / BK; bk++)
@@ -529,7 +547,9 @@ typedef struct
 {
     int M;
     double cublas;
-    double naiveSgemm;
+    double cutlass;
+    double naiveSgemm_16x16;
+    double naiveSgemm_32x32;
     double mySgemmV1Aligned;
     double mySgemmV2Aligned;
     double mySgemmV3Aligned;
@@ -540,9 +560,14 @@ const int TESTNUM = 15;
 const int M_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
 const int N_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
 const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
-// const int K_list[15] = {1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024};
+// // const int K_list[15] = {1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024};
+
+// const int TESTNUM = 13;
+// const int M_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
+// const int N_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
+// const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
 PerformanceData data[TESTNUM];
-const int outer_repeat = 10, inner_repeat = 1;
+const int outer_repeat = 6, inner_repeat = 1;
 
 void test_cublas()
 {
@@ -581,9 +606,97 @@ void test_cublas()
     }
 }
 
-void test_naiveSgemm()
+extern float TestCutlassGemm(int M, int N, int K, float alpha, float beta, int repeat);
+
+void test_cutlass()
 {
-    printf("\nKernal = naiveSgemm\n");
+    printf("\nKernal = cutlass\n");
+
+    {
+
+        for (int i = 0; i < TESTNUM; i++)
+        {
+            const int M = M_list[i], N = N_list[i], K = K_list[i];
+            int problem[3] = {M_list[i], N_list[i], K_list[i]};
+
+            // Scalars used for linear scaling the result of the matrix product.
+            float scalars[2] = {1, 0};
+            double max_sec = 0.0;
+            double min_sec = DBL_MAX;
+            double total_sec = 0.0;
+
+            for (int j = 0; j < outer_repeat; j++)
+            {
+                double this_sec = TestCutlassGemm(
+                    problem[0], // GEMM M dimension
+                    problem[1], // GEMM N dimension
+                    problem[2], // GEMM K dimension
+                    scalars[0], // alpha
+                    scalars[1], // beta
+                    inner_repeat);
+
+                max_sec = max(max_sec, this_sec);
+                min_sec = min(min_sec, this_sec);
+                total_sec += this_sec;
+            }
+
+            double avg_sec = total_sec / outer_repeat;
+            double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
+            data[i].M = M;
+            data[i].cutlass = avg_Gflops;
+            printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
+        }
+    }
+}
+
+void test_naiveSgemm_32x32()
+{
+    printf("\nKernal = naiveSgemm_32x32\n");
+
+    const int BM = 32, BN = 32;
+    void (*gpuSgemm)(float *, float *, float *, const int, const int, const int) =
+        naiveSgemm;
+
+    {
+        const int M = 512, N = 512, K = 512;
+        dim3 blockDim(BN, BM);
+        dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+        float max_error = testMaxError(gpuSgemm, gridDim, blockDim, M, N, K);
+        printf("Max Error = %f\n", max_error);
+    }
+
+    {
+        for (int i = 0; i < TESTNUM; i++)
+        {
+            const int M = M_list[i], N = N_list[i], K = K_list[i];
+
+            dim3 blockDim(BN, BM);
+            dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+
+            double max_sec = 0.0;
+            double min_sec = DBL_MAX;
+            double total_sec = 0.0;
+
+            for (int j = 0; j < outer_repeat; j++)
+            {
+                double this_sec = testPerformance(gpuSgemm, gridDim, blockDim, M, N, K, inner_repeat);
+                max_sec = max(max_sec, this_sec);
+                min_sec = min(min_sec, this_sec);
+                total_sec += this_sec;
+            }
+
+            double avg_sec = total_sec / outer_repeat;
+            double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
+
+            data[i].naiveSgemm_32x32 = avg_Gflops;
+            printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
+        }
+    }
+}
+
+void test_naiveSgemm_16x16()
+{
+    printf("\nKernal = naiveSgemm_16x16\n");
 
     const int BM = 16, BN = 16;
     void (*gpuSgemm)(float *, float *, float *, const int, const int, const int) =
@@ -620,7 +733,7 @@ void test_naiveSgemm()
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
 
-            data[i].naiveSgemm = avg_Gflops;
+            data[i].naiveSgemm_16x16 = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
@@ -630,20 +743,24 @@ int main()
 {
 
     test_cublas();
-    test_naiveSgemm();
+    test_cutlass();
+    test_naiveSgemm_16x16();
+    test_naiveSgemm_32x32();
 
     FILE *fp = fopen("my_sgemm.csv", "w");
     // fprintf(fp, "M,naiveSgemm,mySgemmV1Aligned,mySgemmV2Aligned,mySgemmV3Aligned,cublas\n");
-    fprintf(fp, "M,naiveSgemm,cublas\n");
+    fprintf(fp, "M,naiveSgemm_16x16,naiveSgemm_32x32,cublas,cutlass\n");
     for (int i = 0; i < TESTNUM; i++)
     {
-        fprintf(fp, "%d,%lf,%lf\n",
+        fprintf(fp, "%d,%lf,%lf,%lf,%lf\n",
                 data[i].M,
-                data[i].naiveSgemm,
+                data[i].naiveSgemm_16x16,
+                data[i].naiveSgemm_32x32,
                 // data[i].mySgemmV1Aligned,
                 // data[i].mySgemmV2Aligned,
                 // data[i].mySgemmV3Aligned,
-                data[i].cublas
+                data[i].cublas,
+                data[i].cutlass
                 // Add other kernels as necessary
         );
     }
