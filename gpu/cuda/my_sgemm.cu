@@ -61,6 +61,7 @@ __global__ void naiveSgemm(
     }
 }
 
+// using shared memory
 __global__ void mySgemmV1Aligned(
     float *__restrict__ a, float *__restrict__ b, float *__restrict__ c,
     const int M, const int N, const int K)
@@ -135,6 +136,7 @@ __global__ void mySgemmV1Aligned(
     }
 }
 
+// using shared memory and register
 __global__ void mySgemmV2Aligned(
     float *__restrict__ a, float *__restrict__ b, float *__restrict__ c,
     const int M, const int N, const int K)
@@ -229,6 +231,7 @@ __global__ void mySgemmV2Aligned(
     }
 }
 
+// using double buffering shared memory and register
 __global__ void mySgemmV3Aligned(
     float *__restrict__ a, float *__restrict__ b, float *__restrict__ c,
     const int M, const int N, const int K)
@@ -684,7 +687,7 @@ void test_cutlass_tf32_tensorop()
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
             data[i].M = M;
-            data[i].cutlass = avg_Gflops;
+            data[i].cutlass_tf32_tensorop = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
@@ -780,6 +783,153 @@ void test_naiveSgemm_16x16()
     }
 }
 
+void test_mySgemmV1Aligned()
+{
+    {
+        printf("\nKernal = mySgemmV1Aligned\n");
+
+        const int BM = 128, BN = 128, TM = 8, TN = 8;
+        void (*gpuSgemm)(float *, float *, float *, const int, const int, const int) =
+            mySgemmV1Aligned;
+
+        {
+            const int M = 512, N = 512, K = 512;
+            dim3 blockDim(BN / TN, BM / TM);
+            dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+            float max_error = testMaxError(gpuSgemm, gridDim, blockDim, M, N, K);
+            printf("Max Error = %f\n", max_error);
+        }
+
+        {
+            const int TESTNUM = 15;
+
+            for (int i = 0; i < TESTNUM; i++)
+            {
+                const int M = M_list[i], N = N_list[i], K = K_list[i];
+
+                dim3 blockDim(BN / TN, BM / TM);
+                dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+
+                double max_sec = 0.0;
+                double min_sec = DBL_MAX;
+                double total_sec = 0.0;
+
+                for (int j = 0; j < outer_repeat; j++)
+                {
+                    double this_sec = testPerformance(gpuSgemm, gridDim, blockDim, M, N, K, inner_repeat);
+                    max_sec = max(max_sec, this_sec);
+                    min_sec = min(min_sec, this_sec);
+                    total_sec += this_sec;
+                }
+
+                double avg_sec = total_sec / outer_repeat;
+                double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
+
+                data[i].mySgemmV1Aligned = avg_Gflops;
+                printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
+            }
+        }
+    }
+}
+
+void test_mySgemmV2Aligned()
+{
+    {
+        printf("\nKernal = mySgemmV2Aligned\n");
+
+        const int BM = 128, BN = 128, TM = 8, TN = 8;
+        void (*gpuSgemm)(float *, float *, float *, const int, const int, const int) =
+            mySgemmV2Aligned;
+
+        {
+            const int M = 512, N = 512, K = 512;
+            dim3 blockDim(BN / TN, BM / TM);
+            dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+            float max_error = testMaxError(gpuSgemm, gridDim, blockDim, M, N, K);
+            printf("Max Error = %f\n", max_error);
+        }
+
+        {
+            const int TESTNUM = 15;
+
+            for (int i = 0; i < TESTNUM; i++)
+            {
+                const int M = M_list[i], N = N_list[i], K = K_list[i];
+
+                dim3 blockDim(BN / TN, BM / TM);
+                dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+
+                double max_sec = 0.0;
+                double min_sec = DBL_MAX;
+                double total_sec = 0.0;
+
+                for (int j = 0; j < outer_repeat; j++)
+                {
+                    double this_sec = testPerformance(gpuSgemm, gridDim, blockDim, M, N, K, inner_repeat);
+                    max_sec = max(max_sec, this_sec);
+                    min_sec = min(min_sec, this_sec);
+                    total_sec += this_sec;
+                }
+
+                double avg_sec = total_sec / outer_repeat;
+                double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
+
+                data[i].mySgemmV2Aligned = avg_Gflops;
+                printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
+            }
+        }
+    }
+}
+
+void test_mySgemmV3Aligned()
+{
+    {
+        printf("\nKernal = mySgemmV3Aligned\n");
+
+        const int BM = 128, BN = 128, TM = 8, TN = 8;
+        void (*gpuSgemm)(float *, float *, float *, const int, const int, const int) =
+            mySgemmV3Aligned;
+
+        {
+            const int M = 512, N = 512, K = 512;
+            dim3 blockDim(BN / TN, BM / TM);
+            dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+            float max_error = testMaxError(gpuSgemm, gridDim, blockDim, M, N, K);
+            printf("Max Error = %f\n", max_error);
+        }
+
+        {
+            const int TESTNUM = 15;
+
+            for (int i = 0; i < TESTNUM; i++)
+            {
+                const int M = M_list[i], N = N_list[i], K = K_list[i];
+
+                dim3 blockDim(BN / TN, BM / TM);
+                dim3 gridDim((N + BN - 1) / BN, (M + BM - 1) / BM);
+
+                double max_sec = 0.0;
+                double min_sec = DBL_MAX;
+                double total_sec = 0.0;
+
+                for (int j = 0; j < outer_repeat; j++)
+                {
+                    double this_sec = testPerformance(gpuSgemm, gridDim, blockDim, M, N, K, inner_repeat);
+                    max_sec = max(max_sec, this_sec);
+                    min_sec = min(min_sec, this_sec);
+                    total_sec += this_sec;
+                }
+
+                double avg_sec = total_sec / outer_repeat;
+                double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
+
+                data[i].mySgemmV3Aligned = avg_Gflops;
+                printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
+            }
+        }
+    }
+}
+
 int main()
 {
 
@@ -788,19 +938,22 @@ int main()
     test_cutlass_tf32_tensorop();
     test_naiveSgemm_16x16();
     test_naiveSgemm_32x32();
+    test_mySgemmV1Aligned();
+    test_mySgemmV2Aligned();
+    test_mySgemmV3Aligned();
 
     FILE *fp = fopen("my_sgemm.csv", "w");
     // fprintf(fp, "M,naiveSgemm,mySgemmV1Aligned,mySgemmV2Aligned,mySgemmV3Aligned,cublas\n");
-    fprintf(fp, "M,naiveSgemm_16x16,naiveSgemm_32x32,cublas,cutlass,cutlass_tf32_tensorop\n");
+    fprintf(fp, "M,naiveSgemm_16x16,naiveSgemm_32x32,mySgemmV1_SM,mySgemmV2_SM_RG,mySgemmV3_SM_RG_DB,cublas,cutlass,cutlass_tf32_tensorop\n");
     for (int i = 0; i < TESTNUM; i++)
     {
-        fprintf(fp, "%d,%lf,%lf,%lf,%lf,%lf\n",
+        fprintf(fp, "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
                 data[i].M,
                 data[i].naiveSgemm_16x16,
                 data[i].naiveSgemm_32x32,
-                // data[i].mySgemmV1Aligned,
-                // data[i].mySgemmV2Aligned,
-                // data[i].mySgemmV3Aligned,
+                data[i].mySgemmV1Aligned,
+                data[i].mySgemmV2Aligned,
+                data[i].mySgemmV3Aligned,
                 data[i].cublas,
                 data[i].cutlass,
                 data[i].cutlass_tf32_tensorop

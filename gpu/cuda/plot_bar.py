@@ -21,14 +21,15 @@ df = pd.read_csv(sys.argv[1])
 # Set the size for our plot
 plt.figure(figsize=(15, 7))
 
-# Number of groups
 n_groups = len(df)
+n_cols = len(df.columns[1:])
+bar_width = 0.85 / n_cols  # 调整分母以改变条形宽度
 
-# Create a bar width
-bar_width = 0.15
+# 创建一个索引数组，确保条形在组中居中显示
+index = np.arange(n_groups) + 0.5 * (1 - n_cols * bar_width)
 
 # Create an index for the groups
-index = np.arange(n_groups)
+# index = np.arange(n_groups)
 
 # Plotting each version's performance with an offset for each bar
 for i, column in enumerate(df.columns[1:]):  # Assuming the first column is for matrix sizes
