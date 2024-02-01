@@ -682,9 +682,9 @@ void test_cublas(std::map<int, double> &performance)
     }
 }
 
-void test_cublas_half(std::map<int, double> &performance)
+void test_cublas_fp16(std::map<int, double> &performance)
 {
-    printf("\nKernal = cublas_half\n");
+    printf("\nKernal = cublas_fp16\n");
 
     {
         const int M = 512, N = 512, K = 512;
@@ -713,7 +713,7 @@ void test_cublas_half(std::map<int, double> &performance)
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
             // data[i].M = M;
-            // data[i].cublas_half = avg_Gflops;
+            // data[i].cublas_fp16 = avg_Gflops;
             performance[M] = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
@@ -1111,13 +1111,13 @@ int main()
 {
 
     std::vector<Test> all_tests = {
-        Test{"naiveSgemm_16x16", test_naiveSgemm_16x16, {}},
-        Test{"naiveSgemm_32x32", test_naiveSgemm_32x32, {}},
-        Test{"mySgemmV1Aligned", test_mySgemmV1Aligned, {}},
-        Test{"mySgemmV2Aligned", test_mySgemmV2Aligned, {}},
-        Test{"mySgemmV3Aligned", test_mySgemmV3Aligned, {}},
+        // Test{"naiveSgemm_16x16", test_naiveSgemm_16x16, {}},
+        // Test{"naiveSgemm_32x32", test_naiveSgemm_32x32, {}},
+        // Test{"mySgemmV1_SM", test_mySgemmV1Aligned, {}},
+        // Test{"mySgemmV2_SM_RG", test_mySgemmV2Aligned, {}},
+        Test{"mySgemmV3_SM_RG_DB", test_mySgemmV3Aligned, {}},
         Test{"cublas", test_cublas, {}},
-        Test{"cublas_half", test_cublas_half, {}},
+        Test{"cublas_fp16", test_cublas_fp16, {}},
         Test{"cutlass", test_cutlass, {}},
         Test{"cutlass_fp16_tensorop", test_cutlass_fp16_tensorop, {}},
         Test{"cutlass_tf32_tensorop", test_cutlass_tf32_tensorop, {}},
@@ -1129,6 +1129,6 @@ int main()
         all_tests[i].function(all_tests[i].performance);
     }
 
-    save_to_csv("my_sgemm.csv", all_tests);
+    save_to_csv("my_gemm.csv", all_tests);
     return 0;
 }

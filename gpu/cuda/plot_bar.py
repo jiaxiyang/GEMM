@@ -42,7 +42,7 @@ for i, column in enumerate(df.columns[1:]):  # Assuming the first column is for 
 # Adding labels and title
 plt.xlabel('Matrix Size (M=N=K)')
 plt.ylabel('GFLOPS')
-plt.title('SGEMM Performance')
+plt.title('My GEMM Performance on RTX 3080 Ti')
 
 # 添加图例并将其放置在图表外部
 plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
