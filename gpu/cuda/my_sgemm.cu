@@ -4,6 +4,8 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
+#include <vector>
+#include <string>
 
 #define OFFSET(row, col, ld) ((row) * (ld) + (col))
 #define FLOAT4(pointer) (reinterpret_cast<float4 *>(&(pointer))[0])
@@ -14,6 +16,7 @@ typedef struct
     double cublas;
     double cublas_half;
     double cutlass;
+    double cutlass_fp16_tensorop;
     double cutlass_tf32_tensorop;
     double naiveSgemm_16x16;
     double naiveSgemm_32x32;
@@ -34,8 +37,31 @@ const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 307
 // const int N_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
 // const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
 PerformanceData data[TESTNUM];
-const int outer_repeat = 1, inner_repeat = 5;
-
+const int outer_repeat = 1, inner_repeat = 3;
+void save_to_csv()
+{
+    FILE *fp = fopen("my_sgemm.csv", "w");
+    // fprintf(fp, "M,naiveSgemm,mySgemmV1Aligned,mySgemmV2Aligned,mySgemmV3Aligned,cublas\n");
+    fprintf(fp, "M,naiveSgemm_16x16,naiveSgemm_32x32,mySgemmV1_SM,mySgemmV2_SM_RG,mySgemmV3_SM_RG_DB,cublas_half,cublas,cutlass,cutlass_fp16_tensorop,cutlass_tf32_tensorop\n");
+    for (int i = 0; i < TESTNUM; i++)
+    {
+        fprintf(fp, "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
+                data[i].M,
+                data[i].naiveSgemm_16x16,
+                data[i].naiveSgemm_32x32,
+                data[i].mySgemmV1Aligned,
+                data[i].mySgemmV2Aligned,
+                data[i].mySgemmV3Aligned,
+                data[i].cublas_half,
+                data[i].cublas,
+                data[i].cutlass,
+                data[i].cutlass_fp16_tensorop,
+                data[i].cutlass_tf32_tensorop
+                // Add other kernels as necessary
+        );
+    }
+    fclose(fp);
+}
 void cpuSgemm(
     float *a, float *b, float *c, const int M, const int N, const int K)
 {
@@ -803,6 +829,45 @@ void test_cutlass_tf32_tensorop()
         }
     }
 }
+extern float run_half(int M, int N, int K, int iterations);
+void test_cutlass_fp16_tensorop()
+{
+    printf("\nKernal = cutlass_fp16_tensorop\n");
+
+    {
+
+        for (int i = 0; i < TESTNUM; i++)
+        {
+            const int M = M_list[i], N = N_list[i], K = K_list[i];
+            int problem[3] = {M_list[i], N_list[i], K_list[i]};
+
+            // Scalars used for linear scaling the result of the matrix product.
+            float scalars[2] = {1, 0};
+            double max_sec = 0.0;
+            double min_sec = DBL_MAX;
+            double total_sec = 0.0;
+
+            for (int j = 0; j < outer_repeat; j++)
+            {
+                double this_sec = run_half(
+                    problem[0], // GEMM M dimension
+                    problem[1], // GEMM N dimension
+                    problem[2], // GEMM K dimension
+                    inner_repeat);
+
+                max_sec = max(max_sec, this_sec);
+                min_sec = min(min_sec, this_sec);
+                total_sec += this_sec;
+            }
+
+            double avg_sec = total_sec / outer_repeat;
+            double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
+            data[i].M = M;
+            data[i].cutlass_fp16_tensorop = avg_Gflops;
+            printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
+        }
+    }
+}
 
 void test_naiveSgemm_32x32()
 {
@@ -1047,6 +1112,7 @@ int main()
     test_cublas();
     test_cublas_half();
     test_cutlass();
+    test_cutlass_fp16_tensorop();
     test_cutlass_tf32_tensorop();
     test_naiveSgemm_16x16();
     test_naiveSgemm_32x32();
@@ -1054,25 +1120,6 @@ int main()
     test_mySgemmV2Aligned();
     test_mySgemmV3Aligned();
 
-    FILE *fp = fopen("my_sgemm.csv", "w");
-    // fprintf(fp, "M,naiveSgemm,mySgemmV1Aligned,mySgemmV2Aligned,mySgemmV3Aligned,cublas\n");
-    fprintf(fp, "M,naiveSgemm_16x16,naiveSgemm_32x32,mySgemmV1_SM,mySgemmV2_SM_RG,mySgemmV3_SM_RG_DB,cublas_half,cublas,cutlass,cutlass_tf32_tensorop\n");
-    for (int i = 0; i < TESTNUM; i++)
-    {
-        fprintf(fp, "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
-                data[i].M,
-                data[i].naiveSgemm_16x16,
-                data[i].naiveSgemm_32x32,
-                data[i].mySgemmV1Aligned,
-                data[i].mySgemmV2Aligned,
-                data[i].mySgemmV3Aligned,
-                data[i].cublas_half,
-                data[i].cublas,
-                data[i].cutlass,
-                data[i].cutlass_tf32_tensorop
-                // Add other kernels as necessary
-        );
-    }
-    fclose(fp);
+    save_to_csv();
     return 0;
 }
