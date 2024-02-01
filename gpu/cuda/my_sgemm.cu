@@ -3,9 +3,38 @@
 #include <float.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
+#include <cuda_fp16.h>
 
 #define OFFSET(row, col, ld) ((row) * (ld) + (col))
 #define FLOAT4(pointer) (reinterpret_cast<float4 *>(&(pointer))[0])
+
+typedef struct
+{
+    int M;
+    double cublas;
+    double cublas_half;
+    double cutlass;
+    double cutlass_tf32_tensorop;
+    double naiveSgemm_16x16;
+    double naiveSgemm_32x32;
+    double mySgemmV1Aligned;
+    double mySgemmV2Aligned;
+    double mySgemmV3Aligned;
+    // ... other kernels
+} PerformanceData;
+
+const int TESTNUM = 15;
+const int M_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
+const int N_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
+const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
+// // const int K_list[15] = {1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024};
+
+// const int TESTNUM = 13;
+// const int M_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
+// const int N_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
+// const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
+PerformanceData data[TESTNUM];
+const int outer_repeat = 1, inner_repeat = 5;
 
 void cpuSgemm(
     float *a, float *b, float *c, const int M, const int N, const int K)
@@ -506,6 +535,40 @@ float testPerformance(
     return sec;
 }
 
+float testPerformance(
+    void (*gpuSgemm)(half *, half *, half *, const int, const int, const int),
+    dim3 gridDim, dim3 blockDim, const int M, const int N, const int K, const int repeat)
+{
+
+    size_t size_a = M * K * sizeof(half);
+    size_t size_b = K * N * sizeof(half);
+    size_t size_c = M * N * sizeof(half);
+
+    half *d_a, *d_b, *d_c;
+    cudaMalloc(&d_a, size_a);
+    cudaMalloc(&d_b, size_b);
+    cudaMalloc(&d_c, size_c);
+
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
+    cudaEventRecord(start);
+    for (int i = 0; i < repeat; i++)
+        gpuSgemm<<<gridDim, blockDim>>>(d_a, d_b, d_c, M, N, K);
+    cudaEventRecord(end);
+    cudaEventSynchronize(end);
+
+    float msec, sec;
+    cudaEventElapsedTime(&msec, start, end);
+    sec = msec / 1000.0 / repeat;
+
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_c);
+
+    return sec;
+}
+
 float testCublasPerformance(const int M, const int N, const int K, const int repeat)
 {
 
@@ -546,32 +609,43 @@ float testCublasPerformance(const int M, const int N, const int K, const int rep
     return sec;
 }
 
-typedef struct
+float testCublasPerformance_half(const int M, const int N, const int K, const int repeat)
 {
-    int M;
-    double cublas;
-    double cutlass;
-    double cutlass_tf32_tensorop;
-    double naiveSgemm_16x16;
-    double naiveSgemm_32x32;
-    double mySgemmV1Aligned;
-    double mySgemmV2Aligned;
-    double mySgemmV3Aligned;
-    // ... other kernels
-} PerformanceData;
+    size_t size_a = M * K * sizeof(half);
+    size_t size_b = K * N * sizeof(half);
+    size_t size_c = M * N * sizeof(half);
 
-const int TESTNUM = 15;
-const int M_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
-const int N_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
-const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
-// // const int K_list[15] = {1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024, 1024};
+    half *d_a, *d_b, *d_c;
+    cudaMalloc(&d_a, size_a);
+    cudaMalloc(&d_b, size_b);
+    cudaMalloc(&d_c, size_c);
 
-// const int TESTNUM = 13;
-// const int M_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
-// const int N_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
-// const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
-PerformanceData data[TESTNUM];
-const int outer_repeat = 1, inner_repeat = 5;
+    cublasHandle_t cublas_handle;
+    cublasCreate(&cublas_handle);
+    half cublas_alpha = __float2half(1.0);
+    half cublas_beta = __float2half(0.0);
+
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
+    cudaEventRecord(start);
+    for (int i = 0; i < repeat; i++)
+    {
+        cublasHgemm(cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &cublas_alpha, d_b, N, d_a, K, &cublas_beta, d_c, N);
+    }
+    cudaEventRecord(end);
+    cudaEventSynchronize(end);
+
+    float msec, sec;
+    cudaEventElapsedTime(&msec, start, end);
+    sec = msec / 1000.0 / repeat;
+
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_c);
+
+    return sec;
+}
 
 void test_cublas()
 {
@@ -605,6 +679,43 @@ void test_cublas()
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
             data[i].M = M;
             data[i].cublas = avg_Gflops;
+            printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
+        }
+    }
+}
+
+void test_cublas_half()
+{
+    printf("\nKernal = cublas_half\n");
+
+    {
+        const int M = 512, N = 512, K = 512;
+        float max_error = testCublasMaxError(M, N, K);
+        printf("Max Error = %f\n", max_error);
+    }
+
+    {
+
+        for (int i = 0; i < TESTNUM; i++)
+        {
+            const int M = M_list[i], N = N_list[i], K = K_list[i];
+
+            double max_sec = 0.0;
+            double min_sec = DBL_MAX;
+            double total_sec = 0.0;
+
+            for (int j = 0; j < outer_repeat; j++)
+            {
+                double this_sec = testCublasPerformance_half(M, N, K, inner_repeat);
+                max_sec = max(max_sec, this_sec);
+                min_sec = min(min_sec, this_sec);
+                total_sec += this_sec;
+            }
+
+            double avg_sec = total_sec / outer_repeat;
+            double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
+            data[i].M = M;
+            data[i].cublas_half = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
@@ -934,6 +1045,7 @@ int main()
 {
 
     test_cublas();
+    test_cublas_half();
     test_cutlass();
     test_cutlass_tf32_tensorop();
     test_naiveSgemm_16x16();
@@ -944,16 +1056,17 @@ int main()
 
     FILE *fp = fopen("my_sgemm.csv", "w");
     // fprintf(fp, "M,naiveSgemm,mySgemmV1Aligned,mySgemmV2Aligned,mySgemmV3Aligned,cublas\n");
-    fprintf(fp, "M,naiveSgemm_16x16,naiveSgemm_32x32,mySgemmV1_SM,mySgemmV2_SM_RG,mySgemmV3_SM_RG_DB,cublas,cutlass,cutlass_tf32_tensorop\n");
+    fprintf(fp, "M,naiveSgemm_16x16,naiveSgemm_32x32,mySgemmV1_SM,mySgemmV2_SM_RG,mySgemmV3_SM_RG_DB,cublas_half,cublas,cutlass,cutlass_tf32_tensorop\n");
     for (int i = 0; i < TESTNUM; i++)
     {
-        fprintf(fp, "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
+        fprintf(fp, "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
                 data[i].M,
                 data[i].naiveSgemm_16x16,
                 data[i].naiveSgemm_32x32,
                 data[i].mySgemmV1Aligned,
                 data[i].mySgemmV2Aligned,
                 data[i].mySgemmV3Aligned,
+                data[i].cublas_half,
                 data[i].cublas,
                 data[i].cutlass,
                 data[i].cutlass_tf32_tensorop
