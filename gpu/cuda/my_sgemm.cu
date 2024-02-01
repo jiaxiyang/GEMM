@@ -6,25 +6,12 @@
 #include <cuda_fp16.h>
 #include <vector>
 #include <string>
+#include <map>
 
 #define OFFSET(row, col, ld) ((row) * (ld) + (col))
 #define FLOAT4(pointer) (reinterpret_cast<float4 *>(&(pointer))[0])
 
-typedef struct
-{
-    int M;
-    double cublas;
-    double cublas_half;
-    double cutlass;
-    double cutlass_fp16_tensorop;
-    double cutlass_tf32_tensorop;
-    double naiveSgemm_16x16;
-    double naiveSgemm_32x32;
-    double mySgemmV1Aligned;
-    double mySgemmV2Aligned;
-    double mySgemmV3Aligned;
-    // ... other kernels
-} PerformanceData;
+typedef void (*TestFunction)(std::map<int, double> &);
 
 const int TESTNUM = 15;
 const int M_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384};
@@ -36,32 +23,16 @@ const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 307
 // const int M_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
 // const int N_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
 // const int K_list[TESTNUM] = {128, 192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192};
-PerformanceData data[TESTNUM];
 const int outer_repeat = 1, inner_repeat = 3;
-void save_to_csv()
+
+// 定义测试结构体
+typedef struct
 {
-    FILE *fp = fopen("my_sgemm.csv", "w");
-    // fprintf(fp, "M,naiveSgemm,mySgemmV1Aligned,mySgemmV2Aligned,mySgemmV3Aligned,cublas\n");
-    fprintf(fp, "M,naiveSgemm_16x16,naiveSgemm_32x32,mySgemmV1_SM,mySgemmV2_SM_RG,mySgemmV3_SM_RG_DB,cublas_half,cublas,cutlass,cutlass_fp16_tensorop,cutlass_tf32_tensorop\n");
-    for (int i = 0; i < TESTNUM; i++)
-    {
-        fprintf(fp, "%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n",
-                data[i].M,
-                data[i].naiveSgemm_16x16,
-                data[i].naiveSgemm_32x32,
-                data[i].mySgemmV1Aligned,
-                data[i].mySgemmV2Aligned,
-                data[i].mySgemmV3Aligned,
-                data[i].cublas_half,
-                data[i].cublas,
-                data[i].cutlass,
-                data[i].cutlass_fp16_tensorop,
-                data[i].cutlass_tf32_tensorop
-                // Add other kernels as necessary
-        );
-    }
-    fclose(fp);
-}
+    char name[128];
+    TestFunction function;
+    std::map<int, double> performance; // 指向PerformanceData中对应结果的指针
+} Test;
+
 void cpuSgemm(
     float *a, float *b, float *c, const int M, const int N, const int K)
 {
@@ -673,7 +644,7 @@ float testCublasPerformance_half(const int M, const int N, const int K, const in
     return sec;
 }
 
-void test_cublas()
+void test_cublas(std::map<int, double> &performance)
 {
     printf("\nKernal = cublas\n");
 
@@ -703,14 +674,15 @@ void test_cublas()
 
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-            data[i].M = M;
-            data[i].cublas = avg_Gflops;
+            // data[i].M = M;
+            // data[i].cublas = avg_Gflops;
+            performance[M] = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
 }
 
-void test_cublas_half()
+void test_cublas_half(std::map<int, double> &performance)
 {
     printf("\nKernal = cublas_half\n");
 
@@ -740,8 +712,9 @@ void test_cublas_half()
 
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-            data[i].M = M;
-            data[i].cublas_half = avg_Gflops;
+            // data[i].M = M;
+            // data[i].cublas_half = avg_Gflops;
+            performance[M] = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
@@ -749,7 +722,7 @@ void test_cublas_half()
 
 extern float TestCutlassGemm(int M, int N, int K, float alpha, float beta, int repeat);
 
-void test_cutlass()
+void test_cutlass(std::map<int, double> &performance)
 {
     printf("\nKernal = cutlass\n");
 
@@ -783,15 +756,16 @@ void test_cutlass()
 
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-            data[i].M = M;
-            data[i].cutlass = avg_Gflops;
+            performance[M] = avg_Gflops;
+            // data[i].M = M;
+            // data[i].cutlass = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
 }
 
 extern float run(int M, int N, int K, int iterations);
-void test_cutlass_tf32_tensorop()
+void test_cutlass_tf32_tensorop(std::map<int, double> &performance)
 {
     printf("\nKernal = cutlass_tf32_tensorop\n");
 
@@ -823,14 +797,15 @@ void test_cutlass_tf32_tensorop()
 
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-            data[i].M = M;
-            data[i].cutlass_tf32_tensorop = avg_Gflops;
+            // data[i].M = M;
+            // data[i].cutlass_tf32_tensorop = avg_Gflops;
+            performance[M] = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
 }
 extern float run_half(int M, int N, int K, int iterations);
-void test_cutlass_fp16_tensorop()
+void test_cutlass_fp16_tensorop(std::map<int, double> &performance)
 {
     printf("\nKernal = cutlass_fp16_tensorop\n");
 
@@ -862,14 +837,15 @@ void test_cutlass_fp16_tensorop()
 
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-            data[i].M = M;
-            data[i].cutlass_fp16_tensorop = avg_Gflops;
+            // data[i].M = M;
+            // data[i].cutlass_fp16_tensorop = avg_Gflops;
+            performance[M] = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
 }
 
-void test_naiveSgemm_32x32()
+void test_naiveSgemm_32x32(std::map<int, double> &performance)
 {
     printf("\nKernal = naiveSgemm_32x32\n");
 
@@ -907,14 +883,14 @@ void test_naiveSgemm_32x32()
 
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-
-            data[i].naiveSgemm_32x32 = avg_Gflops;
+            performance[M] = avg_Gflops;
+            // data[i].naiveSgemm_32x32 = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
 }
 
-void test_naiveSgemm_16x16()
+void test_naiveSgemm_16x16(std::map<int, double> &performance)
 {
     printf("\nKernal = naiveSgemm_16x16\n");
 
@@ -952,14 +928,14 @@ void test_naiveSgemm_16x16()
 
             double avg_sec = total_sec / outer_repeat;
             double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-
-            data[i].naiveSgemm_16x16 = avg_Gflops;
+            performance[M] = avg_Gflops;
+            // data[i].naiveSgemm_16x16 = avg_Gflops;
             printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
         }
     }
 }
 
-void test_mySgemmV1Aligned()
+void test_mySgemmV1Aligned(std::map<int, double> &performance)
 {
     {
         printf("\nKernal = mySgemmV1Aligned\n");
@@ -977,7 +953,6 @@ void test_mySgemmV1Aligned()
         }
 
         {
-            const int TESTNUM = 15;
 
             for (int i = 0; i < TESTNUM; i++)
             {
@@ -1000,15 +975,15 @@ void test_mySgemmV1Aligned()
 
                 double avg_sec = total_sec / outer_repeat;
                 double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-
-                data[i].mySgemmV1Aligned = avg_Gflops;
+                performance[M] = avg_Gflops;
+                // data[i].mySgemmV1Aligned = avg_Gflops;
                 printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
             }
         }
     }
 }
 
-void test_mySgemmV2Aligned()
+void test_mySgemmV2Aligned(std::map<int, double> &performance)
 {
     {
         printf("\nKernal = mySgemmV2Aligned\n");
@@ -1026,8 +1001,6 @@ void test_mySgemmV2Aligned()
         }
 
         {
-            const int TESTNUM = 15;
-
             for (int i = 0; i < TESTNUM; i++)
             {
                 const int M = M_list[i], N = N_list[i], K = K_list[i];
@@ -1049,15 +1022,15 @@ void test_mySgemmV2Aligned()
 
                 double avg_sec = total_sec / outer_repeat;
                 double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-
-                data[i].mySgemmV2Aligned = avg_Gflops;
+                performance[M] = avg_Gflops;
+                // data[i].mySgemmV2Aligned = avg_Gflops;
                 printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
             }
         }
     }
 }
 
-void test_mySgemmV3Aligned()
+void test_mySgemmV3Aligned(std::map<int, double> &performance)
 {
     {
         printf("\nKernal = mySgemmV3Aligned\n");
@@ -1075,8 +1048,6 @@ void test_mySgemmV3Aligned()
         }
 
         {
-            const int TESTNUM = 15;
-
             for (int i = 0; i < TESTNUM; i++)
             {
                 const int M = M_list[i], N = N_list[i], K = K_list[i];
@@ -1098,28 +1069,66 @@ void test_mySgemmV3Aligned()
 
                 double avg_sec = total_sec / outer_repeat;
                 double avg_Gflops = ((double)M) * N * K * 2 / 1024 / 1024 / 1024 / avg_sec;
-
-                data[i].mySgemmV3Aligned = avg_Gflops;
+                performance[M] = avg_Gflops;
+                // data[i].mySgemmV3Aligned = avg_Gflops;
                 printf("M N K = %6d %6d %6d, Time = %12.8lf %12.8lf %12.8lf s, AVG Performance = %10.4lf Gflops\n", M, N, K, min_sec, avg_sec, max_sec, avg_Gflops);
             }
         }
     }
 }
 
+void save_to_csv(const char *filename, std::vector<Test> &all_tests)
+{
+    FILE *fp = fopen(filename, "w");
+    if (fp == NULL)
+    {
+        perror("Unable to open file");
+        return;
+    }
+
+    // 打印头部
+    fprintf(fp, "M");
+    for (int i = 0; i < all_tests.size(); i++)
+    {
+        fprintf(fp, ",%s", all_tests[i].name);
+    }
+    fprintf(fp, "\n");
+
+    // 打印数据
+    for (int i = 0; i < TESTNUM; i++)
+    {
+        fprintf(fp, "%d", M_list[i]);
+        for (int j = 0; j < all_tests.size(); j++)
+        {
+            fprintf(fp, ",%lf", all_tests[j].performance[M_list[i]]);
+        }
+        fprintf(fp, "\n");
+    }
+    fclose(fp);
+}
+
 int main()
 {
 
-    test_cublas();
-    test_cublas_half();
-    test_cutlass();
-    test_cutlass_fp16_tensorop();
-    test_cutlass_tf32_tensorop();
-    test_naiveSgemm_16x16();
-    test_naiveSgemm_32x32();
-    test_mySgemmV1Aligned();
-    test_mySgemmV2Aligned();
-    test_mySgemmV3Aligned();
+    std::vector<Test> all_tests = {
+        Test{"naiveSgemm_16x16", test_naiveSgemm_16x16, {}},
+        Test{"naiveSgemm_32x32", test_naiveSgemm_32x32, {}},
+        Test{"mySgemmV1Aligned", test_mySgemmV1Aligned, {}},
+        Test{"mySgemmV2Aligned", test_mySgemmV2Aligned, {}},
+        Test{"mySgemmV3Aligned", test_mySgemmV3Aligned, {}},
+        Test{"cublas", test_cublas, {}},
+        Test{"cublas_half", test_cublas_half, {}},
+        Test{"cutlass", test_cutlass, {}},
+        Test{"cutlass_fp16_tensorop", test_cutlass_fp16_tensorop, {}},
+        Test{"cutlass_tf32_tensorop", test_cutlass_tf32_tensorop, {}},
+        // ... 其他测试
+    };
 
-    save_to_csv();
+    for (int i = 0; i < all_tests.size(); ++i)
+    {
+        all_tests[i].function(all_tests[i].performance);
+    }
+
+    save_to_csv("my_sgemm.csv", all_tests);
     return 0;
 }
