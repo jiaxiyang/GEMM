@@ -38,17 +38,20 @@ for i, column in enumerate(df.columns[1:]):  # Assuming the first column is for 
     # for bar in bars:
         # yval = bar.get_height()
         # plt.text(bar.get_x() + bar.get_width()/2, yval, int(yval), va='bottom', ha='center')
-
+plt.grid(True, linestyle='-.', linewidth=0.5)
 # Adding labels and title
 plt.xlabel('Matrix Size (M=N=K)')
 plt.ylabel('GFLOPS')
-plt.title('My GEMM Performance on RTX 3080 Ti')
+plt.title('My GEMM Performance on RTX 3060')
 
 # 添加图例并将其放置在图表外部
 plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
 
 # 设置x轴刻度的位置
 plt.xticks(index + (n_cols - 1) * bar_width / 2, df['M'])
+max_gflops = df.iloc[:, 1:].max().max()  # Get the maximum GFLOPS value
+interval = 5000 # Example: divide max value by 20 for interval
+plt.yticks(np.arange(0, max_gflops + interval, interval))  # Set y-axis ticks
 
 # Display the plot with a tight layout
 plt.tight_layout()
